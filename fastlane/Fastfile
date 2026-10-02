@@ -1,0 +1,123 @@
+# Paw Crossing release lanes. Auth is an App Store Connect API key (no Apple ID password, no 2FA):
+#   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the .p8 contents, base64), APPLE_TEAM_ID
+# See docs/SETUP-ACCOUNTS.*.md.
+default_platform(:ios)
+
+platform :ios do
+  def api_key
+    @api_key ||= app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_content: ENV.fetch("ASC_KEY_P8"),
+      is_key_content_base64: true,
+      in_house: false,
+    )
+  end
+
+  def key_file
+    path = File.expand_path("../build/AuthKey.p8", __dir__)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, Base64.decode64(ENV.fetch("ASC_KEY_P8")))
+    path
+  end
+
+
+  def review_info
+    {
+      first_name: ENV.fetch("REVIEW_FIRST_NAME"),
+      last_name: ENV.fetch("REVIEW_LAST_NAME"),
+      phone_number: ENV.fetch("REVIEW_PHONE"),
+      email_address: ENV.fetch("REVIEW_EMAIL"),
+      demo_user: "",
+      demo_password: "",
+      notes: File.read(File.expand_path("metadata/review_information/notes.txt", __dir__)),
+    }
+  end
+
+  desc "Build a signed App Store .ipa (Xcode cloud-managed signing via the API key)"
+  lane :build do
+    api_key
+    latest = latest_testflight_build_number(api_key: api_key, initial_build_number: 0) rescue 0
+    increment_build_number(xcodeproj: "ios/PawCrossing.xcodeproj", build_number: latest + 1)
+    build_app(
+      workspace: "ios/PawCrossing.xcworkspace",
+      scheme: "PawCrossing",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "build",
+      clean: true,
+      xcargs: [
+        "DEVELOPMENT_TEAM=#{ENV.fetch('APPLE_TEAM_ID')}",
+        "CODE_SIGN_STYLE=Automatic",
+        "-allowProvisioningUpdates",
+        "-authenticationKeyPath #{key_file}",
+        "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')}",
+        "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}",
+      ].join(" "),
+      export_options: { signingStyle: "automatic", teamID: ENV.fetch("APPLE_TEAM_ID") },
+    )
+  end
+
+  desc "Create/complete the in-app purchases in App Store Connect (scripts/asc-iap.mjs)"
+  lane :iap do
+    shot = File.expand_path("iap-review.png", __dir__)
+    args = File.exist?(shot) ? " --screenshot #{shot}" : ""
+    sh("node #{File.expand_path('../scripts/asc-iap.mjs', __dir__)}#{args}")
+  end
+
+  desc "Build and upload to TestFlight"
+  lane :beta do
+    build
+    upload_to_testflight(api_key: api_key, skip_waiting_for_build_processing: true)
+  end
+
+  desc "Upload store listing (texts, screenshots, age rating, review notes) without submitting"
+  lane :metadata do
+    deliver(
+      api_key: api_key,
+      skip_binary_upload: true,
+      skip_app_version_update: false,
+      overwrite_screenshots: true,
+      force: true,
+      submit_for_review: false,
+      run_precheck_before_submit: false,
+      app_rating_config_path: "fastlane/rating_config.json",
+      app_review_information: review_info,
+      primary_category: "GAMES",
+      primary_first_sub_category: "GAMES_CASUAL",
+      primary_second_sub_category: "GAMES_ACTION",
+    )
+  end
+
+  desc "Build, upload, wait for processing, then submit the version for App Review"
+  lane :release do
+    iap
+    build
+    upload_to_testflight(api_key: api_key, skip_waiting_for_build_processing: false)
+    deliver(
+      api_key: api_key,
+      skip_binary_upload: true,
+      build_number: lane_context[SharedValues::BUILD_NUMBER].to_s,
+      overwrite_screenshots: true,
+      force: true,
+      submit_for_review: true,
+      automatic_release: false,
+      run_precheck_before_submit: false,
+      app_rating_config_path: "fastlane/rating_config.json",
+      app_review_information: review_info,
+      primary_category: "GAMES",
+      primary_first_sub_category: "GAMES_CASUAL",
+      primary_second_sub_category: "GAMES_ACTION",
+      submission_information: {
+        add_id_info_uses_idfa: true,
+        add_id_info_serves_ads: true,
+        add_id_info_tracks_install: false,
+        add_id_info_tracks_action: false,
+        add_id_info_limits_tracking: true,
+        export_compliance_uses_encryption: false,
+        content_rights_contains_third_party_content: true,
+        content_rights_has_rights: true,
+      },
+    )
+  end
+end

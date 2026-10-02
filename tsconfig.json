@@ -1,0 +1,11 @@
+{
+  "extends": "@react-native/typescript-config",
+  "compilerOptions": {
+    "types": ["jest", "@webgpu/types"],
+    "paths": {
+      "three": ["./node_modules/@types/three/src/Three.WebGPU.d.ts"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["**/node_modules", "**/Pods", "scripts"]
+}

@@ -1,0 +1,19 @@
+name: CI
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+jobs:
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx jest
+      - name: Bundle for iOS (release)
+        run: npx react-native bundle --platform ios --dev false --entry-file index.js --bundle-output /tmp/main.jsbundle --assets-dest /tmp/assets

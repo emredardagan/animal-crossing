@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bfe7ff"/><stop offset="1" stop-color="#e6f6ff"/></linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#sky)"/>
+  <!-- rows: grass, road, grass, river, grass -->
+  <g transform="translate(512 640) skewX(-14) translate(-512 -640)">
+    <rect x="-200" y="560" width="1424" height="120" fill="#9bd46a"/>
+    <rect x="-200" y="680" width="1424" height="130" fill="#5a6070"/>
+    <g fill="#f6f1e3"><rect x="-120" y="738" width="110" height="14" rx="7"/><rect x="90" y="738" width="110" height="14" rx="7"/><rect x="300" y="738" width="110" height="14" rx="7"/><rect x="510" y="738" width="110" height="14" rx="7"/><rect x="720" y="738" width="110" height="14" rx="7"/><rect x="930" y="738" width="110" height="14" rx="7"/></g>
+    <rect x="-200" y="810" width="1424" height="110" fill="#8cc75d"/>
+    <rect x="-200" y="920" width="1424" height="140" fill="#5cc8e8"/>
+    <rect x="80" y="955" width="300" height="60" rx="30" fill="#a8774a"/>
+    <rect x="640" y="955" width="260" height="60" rx="30" fill="#a8774a"/>
+  </g>
+  <!-- a soft sun -->
+  <circle cx="820" cy="190" r="90" fill="#ffd56b" opacity=".9"/>
+  <!-- the paw, big and bouncy -->
+  <g transform="translate(232 120) scale(1.1)">
+    <ellipse cx="256" cy="470" rx="170" ry="26" fill="#2b2d42" opacity=".18"/>
+    <g fill="#ff8a3d" stroke="#2b2d42" stroke-width="24" stroke-linejoin="round">
+      <path d="M256 250c-62 0-118 70-118 128 0 40 30 58 62 58 22 0 38-12 56-12s34 12 56 12c32 0 62-18 62-58 0-58-56-128-118-128z"/>
+      <ellipse cx="150" cy="215" rx="42" ry="54" transform="rotate(-18 150 215)"/>
+      <ellipse cx="362" cy="215" rx="42" ry="54" transform="rotate(18 362 215)"/>
+      <ellipse cx="214" cy="130" rx="42" ry="56" transform="rotate(-6 214 130)"/>
+      <ellipse cx="298" cy="130" rx="42" ry="56" transform="rotate(6 298 130)"/>
+    </g>
+    <g fill="#ffc23d" opacity=".9">
+      <ellipse cx="226" cy="300" rx="34" ry="16" transform="rotate(-25 226 300)"/>
+    </g>
+  </g>
+</svg>
