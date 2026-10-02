@@ -18,7 +18,7 @@ class CloudSave: RCTEventEmitter {
 
   deinit { NotificationCenter.default.removeObserver(self) }
 
-  override static func requiresMainQueueSetup() -> Bool { false }
+  @objc static func requiresMainQueueSetup() -> Bool { false }
   override func supportedEvents() -> [String]! { ["CloudSaveChanged"] }
   override func startObserving() { hasListeners = true }
   override func stopObserving() { hasListeners = false }
