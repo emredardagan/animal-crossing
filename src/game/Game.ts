@@ -103,7 +103,7 @@ export class Game {
   constructor(public stage: Stage, quality: Quality) {
     this.scene = stage.scene; this.camera = stage.camera;
     this.quality = quality;
-    this.rainCount = QUALITY[quality].rain;
+    this.rainCount = this.rainDraw = QUALITY[quality].rain;
     this.petIndex = store.prefs.get('pet', 0);
     this.sfx.muted = store.prefs.get('muted', false);
     ui.set({ muted: this.sfx.muted });
@@ -197,7 +197,7 @@ export class Game {
   setQuality(q: Quality) {
     this.quality = q;
     if (this.bursts) this.bursts.scale = q === 'low' ? 0.6 : 1;
-    this.rainDraw = QUALITY[q].rain;
+    this.rainDraw = Math.min(QUALITY[q].rain, this.rainCount);
     this.rainGeo.setDrawRange(0, this.rainDraw * 2);
     this.stage.setQuality(q);
   }

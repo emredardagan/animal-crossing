@@ -3,7 +3,6 @@
 export const KEYS = {
   revenueCatIos: 'appl_REPLACE_ME',
   admob: {
-    appId: 'ca-app-pub-REPLACE_ME~REPLACE_ME',      // also in app.json → react-native-google-mobile-ads.ios_app_id
     rewarded: 'ca-app-pub-REPLACE_ME/REPLACE_ME',
     interstitial: 'ca-app-pub-REPLACE_ME/REPLACE_ME',
   },

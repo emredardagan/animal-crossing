@@ -1,0 +1,12 @@
+Thank you for reviewing Paw Crossing.
+
+How to play: swipe to steer, tap to hop forward.
+
+Where things are:
+- In-app purchases: tap the shop (storefront) button on the title screen. Products: Paw Club, Remove Ads, Safari Pack, Legendary Pack (non-consumable) and three coin packs (consumable). Restore Purchases is in Settings (gear button).
+- Rewarded ads: after a run that scores 10 or more, the game-over panel offers "Continue" and "Coins x2". The shop has a "Free coins" rewarded ad and the daily gift has a "x2" rewarded ad.
+- Interstitial ads appear only between runs, never during play, and not in the first session or the first three runs.
+- The App Tracking Transparency prompt appears once, after the first run ends, behind our own short explainer.
+- Consent (UMP) is shown at launch in regions where it is required.
+
+No account or login is needed. Progress syncs with iCloud key-value storage.

@@ -19,7 +19,7 @@ export function GameView({ onReady }: { onReady: (g: Game) => void }) {
   async function boot() {
     if (started.current || !size.current.w) return;
     const context = ref.current?.getContext('webgpu');
-    if (!context) return;
+    if (!context) { setTimeout(() => boot().catch(console.error), 50); return; } // native surface not attached yet
     started.current = true;
     const { w, h } = size.current;
     let quality = prefs.get<Quality | 'auto'>('quality', 'auto');

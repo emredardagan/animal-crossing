@@ -15,3 +15,6 @@ gem 'logger'
 gem 'benchmark'
 gem 'mutex_m'
 gem 'nkf'
+
+# Build, upload and submit (fastlane/Fastfile)
+gem 'fastlane'
