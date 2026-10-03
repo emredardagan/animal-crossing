@@ -1,6 +1,6 @@
 // toybox.js createStage() on WebGPURenderer (react-native-webgpu -> Dawn -> Metal).
 import * as THREE from 'three/webgpu';
-import { pass, mrt, output, normalView, directionToColor, colorToDirection, screenUV, vec3, vec4, mix, uniform, Fn } from 'three/tsl';
+import { pass, mrt, output, normalView, vec3, vec4, mix, uniform } from 'three/tsl';
 import { ao as gtao } from 'three/addons/tsl/display/GTAONode.js';
 import type { RNCanvasContext } from 'react-native-webgpu';
 import { loadSky } from './assets';
@@ -30,11 +30,25 @@ export interface Stage {
   dispose(): void;
 }
 
+// Same device three.js would request, except Dawn's metal_disable_sampler_compare toggle is forced off:
+// Dawn turns it on for the iOS Simulator (it only reports GPUFamily2), which makes every shadow-map
+// comparison sampler invalid and drops the whole frame. The simulator's host GPU supports compare
+// samplers and real devices never enable the toggle, so this is a no-op on iPhones.
+async function requestDevice(): Promise<GPUDevice> {
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance', featureLevel: 'compatibility' } as GPURequestAdapterOptions);
+  if (!adapter) throw new Error('Unable to create WebGPU adapter');
+  return adapter.requestDevice({
+    requiredFeatures: [...adapter.features] as GPUFeatureName[],
+    dawnToggles: { disabledToggles: ['metal_disable_sampler_compare'] },
+  } as GPUDeviceDescriptor);
+}
+
 export async function createStage(context: RNCanvasContext, {
   width, height, pixelRatio, quality = 'high' as Quality,
   fov = 32, background = PALETTE.sky, fog = [28, 60] as [number, number], envIntensity = 0.55,
 }: { width: number; height: number; pixelRatio: number; quality?: Quality; fov?: number; background?: number; fog?: [number, number]; envIntensity?: number }): Promise<Stage> {
   const renderer = new THREE.WebGPURenderer({
+    device: await requestDevice(),
     antialias: true,
     canvas: context.canvas as unknown as HTMLCanvasElement,
     context: context as unknown as GPUCanvasContext,
@@ -64,6 +78,8 @@ export async function createStage(context: RNCanvasContext, {
   sc.left = -16; sc.right = 16; sc.top = 16; sc.bottom = -16; sc.near = 1; sc.far = 60;
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.02;
+  // the shadow pass redraws every caster, so it is refreshed every other frame (see render())
+  sun.shadow.autoUpdate = false;
   sun.shadow.radius = 3;
   scene.add(sun, sun.target);
   const sunOffset = sun.position.clone();
@@ -78,12 +94,14 @@ export async function createStage(context: RNCanvasContext, {
   let pipeline: THREE.RenderPipeline | null = null;
   const aoColor = uniform(new THREE.Color(0x2a3350));
   function buildPipeline() {
-    const scenePass = pass(scene, camera);
-    scenePass.setMRT(mrt({ output, normal: directionToColor(normalView) }));
+    // GTAO can't read a multisampled depth texture, so this pass renders without MSAA
+    const scenePass = pass(scene, camera, { samples: 0 });
+    // GTAO samples the normal texture itself, so store raw view-space normals (half float keeps the sign)
+    scenePass.setMRT(mrt({ output, normal: normalView }));
+    scenePass.getTexture('normal').type = THREE.HalfFloatType;
     const color = scenePass.getTextureNode('output');
-    const normalTex = scenePass.getTextureNode('normal');
+    const normal = scenePass.getTextureNode('normal');
     const depth = scenePass.getTextureNode('depth');
-    const normal = Fn(() => colorToDirection(normalTex.sample(screenUV)))();
     const aoPass = gtao(depth, normal, camera);
     aoPass.resolutionScale = 0.5;
     aoPass.radius.value = 1.2;
@@ -95,7 +113,7 @@ export async function createStage(context: RNCanvasContext, {
     return p;
   }
 
-  let q: Quality = quality;
+  let q: Quality = quality, frame = 0;
   const stage: Stage = {
     renderer, scene, camera, sun, hemi,
     setExposure(v) { renderer.toneMappingExposure = v; },
@@ -110,6 +128,7 @@ export async function createStage(context: RNCanvasContext, {
       sun.position.copy(target).add(sunOffset);
     },
     render() {
+      if (frame++ % 2 === 0) sun.shadow.needsUpdate = true;
       if (pipeline) pipeline.render(); else renderer.render(scene, camera);
       context.present();
     },

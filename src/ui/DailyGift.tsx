@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Animated, { ZoomIn } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { FilmSlate, Gift } from './icons';
 import * as ads from '../platform/ads';
 import * as store from '../platform/save';
@@ -27,7 +27,7 @@ export function DailyGift({ onDone }: { onDone: () => void }) {
   };
   return (
     <View style={st.wrap}>
-      <Animated.View entering={ZoomIn.springify().damping(12)} style={s.panel}>
+      <Animated.View entering={FadeIn.duration(220)} style={s.panel}>
         <Gift size={48} weight="fill" color={C.accent} />
         <Text style={[s.h2, { fontSize: 30, marginTop: 6 }]}>Daily gift!</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 14 }}>

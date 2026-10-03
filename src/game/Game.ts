@@ -1,6 +1,7 @@
 // Paw Crossing game logic: a one-to-one port of paw-crossing.html onto three/webgpu.
 // Numbers (speeds, odds, timings) are unchanged. DOM writes go through ./ui, storage through platform/save.
 import * as THREE from 'three/webgpu';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { AccessibilityInfo } from 'react-native';
 import { type Stage, PALETTE, QUALITY, type Quality } from '../engine/stage';
 import { preload, loaded, cloneLoaded, loadParticleTextures } from '../engine/assets';
@@ -34,6 +35,85 @@ export interface Entitlements { club: boolean; safari: boolean; legendary: boole
 const HALF = 4;           // playable columns: -4..4
 const WORLD = 13;         // visual half-width
 const AHEAD = 26, BEHIND = 9;
+
+// Merge meshes that share a material into one geometry in `toLocal` space, writing straight into typed
+// arrays (Hermes is slow at three's per-vertex applyMatrix4 on cloned geometries). Returns null for
+// layouts it does not handle (quantized or tangent attributes), which then take mergeSlow.
+const _m = new THREE.Matrix4(), _n = new THREE.Matrix3();
+function mergeTransformed(meshes: THREE.Mesh[], toLocal: THREE.Matrix4): THREE.BufferGeometry | null {
+  const first = meshes[0].geometry;
+  const names = Object.keys(first.attributes);
+  if (!first.attributes.position || names.includes('tangent')) return null;
+  for (const k of ['position', 'normal']) {
+    const a = first.attributes[k] as THREE.BufferAttribute | THREE.InterleavedBufferAttribute | undefined;
+    const arr = a && ((a as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute ? (a as THREE.InterleavedBufferAttribute).data.array : (a as THREE.BufferAttribute).array);
+    if (a && (!(arr instanceof Float32Array) || a.normalized || a.itemSize !== 3)) return null;
+  }
+  const indexed = !!first.index;
+  let V = 0, I = 0;
+  for (const m of meshes) { V += m.geometry.attributes.position.count; if (indexed) I += m.geometry.index!.count; }
+  const out = new THREE.BufferGeometry();
+  const outArrays: Record<string, THREE.TypedArray> = {};
+  for (const k of names) {
+    const a = first.attributes[k] as THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+    const src = (a as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute ? (a as THREE.InterleavedBufferAttribute).data.array : (a as THREE.BufferAttribute).array;
+    const Ctor = src.constructor as new (n: number) => THREE.TypedArray;
+    outArrays[k] = new Ctor(V * a.itemSize);
+    out.setAttribute(k, new THREE.BufferAttribute(outArrays[k], a.itemSize, a.normalized));
+  }
+  const index = indexed ? (V > 65535 ? new Uint32Array(I) : new Uint16Array(I)) : null;
+  let vo = 0, io = 0;
+  for (const mesh of meshes) {
+    const geo = mesh.geometry, count = geo.attributes.position.count;
+    const e = _m.multiplyMatrices(toLocal, mesh.matrixWorld).elements;
+    const ne = _n.getNormalMatrix(_m).elements;
+    for (const k of names) {
+      const a = geo.attributes[k] as THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+      const inter = (a as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute;
+      const src = inter ? (a as THREE.InterleavedBufferAttribute).data.array : (a as THREE.BufferAttribute).array;
+      const stride = inter ? (a as THREE.InterleavedBufferAttribute).data.stride : a.itemSize;
+      const off = inter ? (a as THREE.InterleavedBufferAttribute).offset : 0;
+      const n = a.itemSize, dst = outArrays[k];
+      if (k === 'position') {
+        for (let v = 0, s = off, d = vo * 3; v < count; v++, s += stride, d += 3) {
+          const x = src[s], y = src[s + 1], z = src[s + 2];
+          dst[d] = e[0] * x + e[4] * y + e[8] * z + e[12];
+          dst[d + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
+          dst[d + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+        }
+      } else if (k === 'normal') {
+        for (let v = 0, s = off, d = vo * 3; v < count; v++, s += stride, d += 3) {
+          const x = src[s], y = src[s + 1], z = src[s + 2];
+          const nx = ne[0] * x + ne[3] * y + ne[6] * z, ny = ne[1] * x + ne[4] * y + ne[7] * z, nz = ne[2] * x + ne[5] * y + ne[8] * z;
+          const l = Math.hypot(nx, ny, nz) || 1;
+          dst[d] = nx / l; dst[d + 1] = ny / l; dst[d + 2] = nz / l;
+        }
+      } else if (!inter) {
+        dst.set((src as THREE.TypedArray).subarray(0, count * n), vo * n);
+      } else {
+        for (let v = 0, s = off, d = vo * n; v < count; v++, s += stride, d += n) for (let c = 0; c < n; c++) dst[d + c] = src[s + c];
+      }
+    }
+    if (index) { const src = geo.index!.array; for (let j = 0; j < src.length; j++) index[io + j] = src[j] + vo; io += src.length; }
+    vo += count;
+  }
+  if (index) out.setIndex(new THREE.BufferAttribute(index, 1));
+  return out;
+}
+function mergeSlow(meshes: THREE.Mesh[], toLocal: THREE.Matrix4) {
+  const geos = meshes.map(m => {
+    const geo = m.geometry.clone();
+    // GLTF attributes can be interleaved; flatten them so they can be transformed and merged
+    for (const k of Object.keys(geo.attributes)) {
+      const a = geo.attributes[k] as THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+      if ((a as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute) geo.setAttribute(k, (a as THREE.InterleavedBufferAttribute).clone());
+    }
+    return geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toLocal, m.matrixWorld));
+  });
+  const geo = mergeGeometries(geos);
+  for (const g of geos) g.dispose();
+  return geo;
+}
 
 export class Game {
   scene: THREE.Scene; camera: THREE.PerspectiveCamera;
@@ -251,7 +331,7 @@ export class Game {
   glowQuad(g: THREE.Group, mat: THREE.Material, x: number, y: number, z: number, w: number, h: number, flat = true) {
     const q = new THREE.Mesh(this.planeGeo, mat); q.scale.set(w, h, 1); q.position.set(x, y, z);
     if (flat) q.rotation.x = -Math.PI / 2; else ((g.userData.bb ||= []) as Obj[]).push(q);
-    q.renderOrder = 2; g.add(q); return q;
+    q.renderOrder = 2; q.userData.live = true; g.add(q); return q;
   }
   streetLamp(g: THREE.Group, x: number) {
     const lamp = cloneLoaded(loaded(P.lamp)).object; lamp.scale.setScalar(2.2); lamp.position.set(x, 0, 0.42); lamp.rotation.y = x > 0 ? Math.PI : 0; g.add(lamp);
@@ -544,6 +624,7 @@ export class Game {
       }
     }
 
+    this.bakeRow(row);
     rows.set(i, row);
     this.maxRowBuilt = Math.max(this.maxRowBuilt, i);
     return row;
@@ -593,7 +674,65 @@ export class Game {
     while (this.maxRowBuilt < front + AHEAD) this.makeRow(this.maxRowBuilt + 1);
     for (const [i, row] of this.rows) if (i < front - BEHIND) { this.disposeRow(row); this.rows.delete(i); }
   }
+  // Merge a row's static meshes into one mesh per material, so each row costs a handful of draw calls
+  // (in the main and the shadow pass) instead of one per tree, flower and lane dash. Anything that moves,
+  // gets picked up or changes on its own (movers, coins, power-ups, signal lamps, glow quads) stays separate;
+  // rigid movers (cars, logs, boats, the train) are merged within themselves.
+  bakeRow(row: Row) {
+    const g = row.group;
+    const live = new Set<Obj>();
+    for (const m of row.movers) { live.add(m.obj); for (const a of m.attach || []) live.add(a.obj); }
+    if (row.coin) live.add(row.coin);
+    if (row.power) live.add(row.power.obj);
+    if (row.train) { live.add(row.train.obj); for (const l of row.train.lamps) live.add(l); }
+    const merged: THREE.BufferGeometry[] = [];
+    this.mergeStatic(g, live, merged);
+    for (const m of row.movers) if (m.kind === 'car' || m.kind === 'log' || m.kind === 'boat') this.mergeStatic(m.obj, new Set(), merged);
+    if (row.train) this.mergeStatic(row.train.obj, new Set(), merged);
+    g.userData.merged = merged;
+  }
+  mergeStatic(root: Obj, skip: Set<Obj>, out: THREE.BufferGeometry[]) {
+    const isSkipped = (o: Obj) => skip.has(o) || !!o.userData.live;
+    root.updateMatrixWorld(true);
+    const toLocal = new THREE.Matrix4().copy(root.matrixWorld).invert();
+    const buckets = new Map<string, THREE.Mesh[]>();
+    const visit = (o: Obj) => {
+      if (o !== root && isSkipped(o)) return;
+      const m = o as THREE.Mesh;
+      if (m.isMesh && !(m as unknown as THREE.SkinnedMesh).isSkinnedMesh && !Array.isArray(m.material) && m.visible) {
+        const geo = m.geometry;
+        const attrs = Object.keys(geo.attributes).sort().map(k => {
+          const a = geo.attributes[k];
+          return `${k}:${a.itemSize}:${a.normalized}:${(a as THREE.BufferAttribute).array?.constructor.name ?? 'i'}`;
+        }).join(',');
+        const key = `${m.material.uuid}|${m.castShadow}|${m.receiveShadow}|${m.renderOrder}|${geo.index ? 'i' : 'n'}|${attrs}|${Object.keys(geo.morphAttributes).length}`;
+        const list = buckets.get(key);
+        if (list) list.push(m); else buckets.set(key, [m]);
+      }
+      for (const c of o.children) visit(c);
+    };
+    visit(root);
+    for (const meshes of buckets.values()) {
+      if (meshes.length < 2) continue;
+      const geo = mergeTransformed(meshes, toLocal) ?? mergeSlow(meshes, toLocal);
+      if (!geo) continue;
+      const src = meshes[0];
+      const mesh = new THREE.Mesh(geo, src.material);
+      mesh.castShadow = src.castShadow; mesh.receiveShadow = src.receiveShadow; mesh.renderOrder = src.renderOrder;
+      for (const m of meshes) m.removeFromParent();
+      root.add(mesh);
+      out.push(geo);
+    }
+    // drop the now-empty model wrappers so the scene graph stays small to traverse every frame
+    for (const child of [...root.children]) {
+      if (isSkipped(child) || (child as THREE.Mesh).isMesh) continue;
+      let hasMesh = false;
+      child.traverse(o => { if ((o as THREE.Mesh).isMesh) hasMesh = true; });
+      if (!hasMesh) root.remove(child);
+    }
+  }
   disposeRow(row: Row) {
+    for (const geo of (row.group.userData.merged || []) as THREE.BufferGeometry[]) geo.dispose();
     this.world.remove(row.group);
     for (const mx of row.mixers) mx.stopAllAction();
   }

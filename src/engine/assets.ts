@@ -49,6 +49,18 @@ const manager = new THREE.LoadingManager();
 manager.addHandler(/colormap\.png$/, new ColormapLoader(manager));
 const loader = new GLTFLoader(manager);
 
+// Kenney GLBs each carry their own copy of the kit's material; identical copies are folded into one
+// so Game.bakeRow can merge different models that look the same into a single draw call.
+const materials = new Map<string, THREE.Material>();
+const hex = (c?: THREE.Color) => (c ? c.getHexString() : '-');
+function shared(mat: THREE.MeshStandardMaterial): THREE.Material {
+  const key = [mat.type, hex(mat.color), hex(mat.emissive), mat.emissiveIntensity, mat.roughness, mat.metalness, mat.map?.uuid,
+    mat.normalMap?.uuid, mat.transparent, mat.opacity, mat.alphaTest, mat.side, mat.vertexColors, mat.flatShading, mat.depthWrite].join('|');
+  let m = materials.get(key);
+  if (!m) { m = mat; materials.set(key, m); }
+  return m;
+}
+
 const cache = new Map<string, Promise<GLTF>>();
 const ready = new Map<string, GLTF>();
 
@@ -72,6 +84,7 @@ export function load(key: string): Promise<GLTF> {
           m.castShadow = true; m.receiveShadow = true;
           const mat = m.material as THREE.MeshStandardMaterial;
           if (mat?.map) mat.map.anisotropy = 4;
+          if (mat && !Array.isArray(m.material)) m.material = shared(mat);
         }
       });
       ready.set(key, gltf);

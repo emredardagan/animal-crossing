@@ -2,7 +2,7 @@
 import React, { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
-  Easing, useAnimatedStyle, useSharedValue, withDelay, withSequence, withSpring, withTiming, FadeOut,
+  Easing, useAnimatedStyle, useSharedValue, withDelay, withSequence, withTiming, FadeOut,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckCircle, CloudLightning, Gift, Heart, Info, LockSimple, Magnet, MoonStars, PawPrint, Snowflake, SpeakerHigh, SpeakerSlash } from './icons';
@@ -46,7 +46,7 @@ export function Toast() {
   useEffect(() => {
     if (!t) return;
     y.value = -20; o.value = 0;
-    y.value = withSequence(withSpring(0, { damping: 9, stiffness: 180 }), withDelay(2100, withTiming(-20, { duration: 250 })));
+    y.value = withSequence(withTiming(0, { duration: 250, easing: Easing.out(Easing.cubic) }), withDelay(2100, withTiming(-20, { duration: 250 })));
     o.value = withSequence(withTiming(1, { duration: 250 }), withDelay(2100, withTiming(0, { duration: 250 })));
   }, [t, y, o]);
   const anim = useAnimatedStyle(() => ({ opacity: o.value, transform: [{ translateY: y.value }] }));
@@ -64,11 +64,11 @@ export function Toast() {
 
 export function ZoneBanner() {
   const b = useUi(u => u.banner);
-  const sc = useSharedValue(0.6), o = useSharedValue(0), ty = useSharedValue(0);
+  const sc = useSharedValue(0.92), o = useSharedValue(0), ty = useSharedValue(0);
   useEffect(() => {
     if (!b) { o.value = withTiming(0, { duration: 150 }); return; }
-    sc.value = 0.6; o.value = 0; ty.value = 0;
-    sc.value = withSequence(withTiming(1.06, { duration: 310 }), withTiming(1, { duration: 210 }));
+    sc.value = 0.92; o.value = 0; ty.value = 0;
+    sc.value = withTiming(1, { duration: 310, easing: Easing.out(Easing.cubic) });
     o.value = withSequence(withTiming(1, { duration: 310 }), withDelay(1770, withTiming(0, { duration: 520 })));
     ty.value = withDelay(2080, withTiming(-30, { duration: 520 }));
   }, [b, sc, o, ty]);
