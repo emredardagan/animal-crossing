@@ -49,16 +49,25 @@ const manager = new THREE.LoadingManager();
 manager.addHandler(/colormap\.png$/, new ColormapLoader(manager));
 const loader = new GLTFLoader(manager);
 
-// Kenney GLBs each carry their own copy of the kit's material; identical copies are folded into one
-// so Game.bakeRow can merge different models that look the same into a single draw call.
+// Every GLB brings its own copy of its kit's few materials (151 files, 25 distinct looks).
+// Identical copies are folded into one, so Game.bakeRow can merge different models that look
+// the same into a single draw call (and the GPU sees fewer bind groups).
 const materials = new Map<string, THREE.Material>();
 const hex = (c?: THREE.Color) => (c ? c.getHexString() : '-');
 function shared(mat: THREE.MeshStandardMaterial): THREE.Material {
-  const key = [mat.type, hex(mat.color), hex(mat.emissive), mat.emissiveIntensity, mat.roughness, mat.metalness, mat.map?.uuid,
-    mat.normalMap?.uuid, mat.transparent, mat.opacity, mat.alphaTest, mat.side, mat.vertexColors, mat.flatShading, mat.depthWrite].join('|');
-  let m = materials.get(key);
-  if (!m) { m = mat; materials.set(key, m); }
-  return m;
+  if (!mat) return mat;
+  const t = mat.map;
+  if (t) t.anisotropy = 4;
+  // KHR_texture_transform clones the kit's colormap per file, so textures compare by source + transform
+  const key = [
+    mat.type, hex(mat.color), hex(mat.emissive), mat.emissiveIntensity, mat.roughness, mat.metalness, mat.normalMap?.uuid,
+    mat.transparent, mat.opacity, mat.alphaTest, mat.side, mat.vertexColors, mat.flatShading, mat.depthWrite,
+    t ? [t.source.uuid, t.offset.x, t.offset.y, t.repeat.x, t.repeat.y, t.rotation, t.channel].join(',') : '-',
+  ].join('|');
+  const hit = materials.get(key);
+  if (hit) { if (hit !== mat) mat.dispose(); return hit; }
+  materials.set(key, mat);
+  return mat;
 }
 
 const cache = new Map<string, Promise<GLTF>>();
@@ -82,9 +91,9 @@ export function load(key: string): Promise<GLTF> {
         const m = o as THREE.Mesh;
         if (m.isMesh) {
           m.castShadow = true; m.receiveShadow = true;
-          const mat = m.material as THREE.MeshStandardMaterial;
-          if (mat?.map) mat.map.anisotropy = 4;
-          if (mat && !Array.isArray(m.material)) m.material = shared(mat);
+          // no normal maps anywhere: tangents only make the vertex layouts differ (and force bakeRow's slow path)
+          m.geometry.deleteAttribute('tangent');
+          if (m.material && !Array.isArray(m.material)) m.material = shared(m.material as THREE.MeshStandardMaterial);
         }
       });
       ready.set(key, gltf);

@@ -11,9 +11,11 @@ export const PALETTE = {
 };
 
 export type Quality = 'high' | 'low';
+// shadow: map size, 0 = no shadows. Low drops everything that costs a full extra pass
+// (GTAO, the shadow map), which is what slow phones spend their frame on.
 export const QUALITY = {
-  high: { ao: true, shadow: 2048, pixelRatio: 2, rain: 900 },
-  low: { ao: false, shadow: 1024, pixelRatio: 1.5, rain: 450 },
+  high: { ao: true, shadow: 1024, pixelRatio: 2, rain: 600 },
+  low: { ao: false, shadow: 0, pixelRatio: 1.25, rain: 300 },
 } as const;
 
 export interface Stage {
@@ -73,7 +75,7 @@ export async function createStage(context: RNCanvasContext, {
   const sun = new THREE.DirectionalLight(0xfff1d6, 2.4);
   sun.position.set(-6, 14, 8);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1024, 1024);
   const sc = sun.shadow.camera;
   sc.left = -16; sc.right = 16; sc.top = 16; sc.bottom = -16; sc.near = 1; sc.far = 60;
   sun.shadow.bias = -0.0004;
@@ -114,10 +116,12 @@ export async function createStage(context: RNCanvasContext, {
   }
 
   let q: Quality = quality, frame = 0;
+  const size = { w: width, h: height };
   const stage: Stage = {
     renderer, scene, camera, sun, hemi,
     setExposure(v) { renderer.toneMappingExposure = v; },
     resize(w, h) {
+      size.w = w; size.h = h;
       renderer.setPixelRatio(Math.min(pixelRatio, QUALITY[q].pixelRatio));
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
@@ -135,13 +139,15 @@ export async function createStage(context: RNCanvasContext, {
     setQuality(next) {
       q = next;
       const cfg = QUALITY[q];
-      if (sun.shadow.mapSize.x !== cfg.shadow) {
+      sun.castShadow = cfg.shadow > 0;
+      if (cfg.shadow && sun.shadow.mapSize.x !== cfg.shadow) {
         sun.shadow.mapSize.set(cfg.shadow, cfg.shadow);
         sun.shadow.map?.dispose(); sun.shadow.map = null as unknown as THREE.WebGLRenderTarget;
       }
       if (cfg.ao && !pipeline) {
         try { pipeline = buildPipeline(); } catch (e) { console.warn('AO disabled', e); pipeline = null; }
       } else if (!cfg.ao && pipeline) { pipeline.dispose(); pipeline = null; }
+      stage.resize(size.w, size.h);
     },
     dispose() {
       renderer.setAnimationLoop(null);
@@ -150,6 +156,5 @@ export async function createStage(context: RNCanvasContext, {
     },
   };
   stage.setQuality(q);
-  stage.resize(width, height);
   return stage;
 }

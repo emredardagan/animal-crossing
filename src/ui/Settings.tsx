@@ -24,7 +24,7 @@ export function Settings() {
 
   const pickQuality = (q: Q) => {
     setQuality(q); prefs.set('quality', q);
-    game()?.setQuality(q === 'low' ? 'low' : 'high');
+    game()?.setQuality(q === 'auto' ? prefs.get<'high' | 'low'>('autoQuality', 'high') : q);
   };
   const restore = async () => {
     setRestoring(true);

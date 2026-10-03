@@ -22,9 +22,12 @@ export function GameView({ onReady }: { onReady: (g: Game) => void }) {
     if (!context) { setTimeout(() => boot().catch(console.error), 50); return; } // native surface not attached yet
     started.current = true;
     const { w, h } = size.current;
-    let quality = prefs.get<Quality | 'auto'>('quality', 'auto');
-    const stage = await createStage(context, { width: w, height: h, pixelRatio: PixelRatio.get(), quality: quality === 'low' ? 'low' : 'high' });
-    const game = new Game(stage, quality === 'low' ? 'low' : 'high');
+    // 'auto' starts from what the probe found on an earlier launch
+    const pref = prefs.get<Quality | 'auto'>('quality', 'auto');
+    const quality: Quality = pref === 'auto' ? prefs.get<Quality>('autoQuality', 'high') : pref;
+    let probing = pref === 'auto' && quality === 'high';
+    const stage = await createStage(context, { width: w, height: h, pixelRatio: PixelRatio.get(), quality });
+    const game = new Game(stage, quality);
     gameRef.current = game;
     setGame(game);
     await game.boot(k => ui.set({ loadProgress: k }));
@@ -35,13 +38,14 @@ export function GameView({ onReady }: { onReady: (g: Game) => void }) {
     const frame = () => {
       raf = requestAnimationFrame(frame);
       const now = performance.now(), dt = (now - last) / 1000; last = now;
-      if (quality === 'auto' && game.state === 'play' && !game.paused) {
+      if (probing && game.state === 'play' && !game.paused && prefs.get('quality', 'auto') === 'auto') {
         probeT += dt; probeFrames++;
         if (probeT > 6) {
-          const fps = probeFrames / probeT;
-          quality = fps < 45 ? 'low' : 'high';
-          prefs.set('quality', 'auto');
-          if (quality === 'low') { game.setQuality('low'); toast('info', 'Switched to Low graphics for smoother play'); }
+          probing = false;
+          if (probeFrames / probeT < 45) {
+            prefs.set('autoQuality', 'low'); // remembered, so the next launch starts smooth
+            game.setQuality('low'); toast('info', 'Switched to Low graphics for smoother play');
+          }
         }
       }
       try { game.tick(dt, size.current.w, size.current.h); } catch (e) { console.error(e); }
