@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Animated, { ZoomIn, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { ArrowCounterClockwise, FilmSlate, PawPrint } from './icons';
 import { useUi } from '../game/ui';
 import { game } from '../game/instance';
@@ -27,7 +27,7 @@ export function GameOver({ onLeave }: { onLeave: (then: () => void) => void }) {
 
   return (
     <View style={st.wrap} pointerEvents="box-none">
-      <Animated.View entering={ZoomIn.springify().damping(12)} style={s.panel}>
+      <Animated.View entering={FadeIn.duration(220)} style={s.panel}>
         <Text style={s.h2}>{over.title}</Text>
         <Text style={[s.dim, { marginTop: 6, marginBottom: 16, textAlign: 'center' }]}>{over.why}</Text>
         <View style={st.stats}>

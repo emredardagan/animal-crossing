@@ -50,14 +50,18 @@ manager.addHandler(/colormap\.png$/, new ColormapLoader(manager));
 const loader = new GLTFLoader(manager);
 
 // Every GLB brings its own copy of its kit's few materials (151 files, 25 distinct looks).
-// One instance per look means fewer GPU bind groups and lets static batching merge across models.
+// Identical copies are folded into one, so Game.bakeRow can merge different models that look
+// the same into a single draw call (and the GPU sees fewer bind groups).
 const materials = new Map<string, THREE.Material>();
+const hex = (c?: THREE.Color) => (c ? c.getHexString() : '-');
 function shared(mat: THREE.MeshStandardMaterial): THREE.Material {
   if (!mat) return mat;
   const t = mat.map;
   if (t) t.anisotropy = 4;
+  // KHR_texture_transform clones the kit's colormap per file, so textures compare by source + transform
   const key = [
-    mat.type, mat.color?.getHex(), mat.roughness, mat.metalness, mat.emissive?.getHex(), mat.transparent, mat.opacity, mat.side, mat.alphaTest, mat.vertexColors,
+    mat.type, hex(mat.color), hex(mat.emissive), mat.emissiveIntensity, mat.roughness, mat.metalness, mat.normalMap?.uuid,
+    mat.transparent, mat.opacity, mat.alphaTest, mat.side, mat.vertexColors, mat.flatShading, mat.depthWrite,
     t ? [t.source.uuid, t.offset.x, t.offset.y, t.repeat.x, t.repeat.y, t.rotation, t.channel].join(',') : '-',
   ].join('|');
   const hit = materials.get(key);
@@ -87,9 +91,9 @@ export function load(key: string): Promise<GLTF> {
         const m = o as THREE.Mesh;
         if (m.isMesh) {
           m.castShadow = true; m.receiveShadow = true;
-          // no normal maps anywhere: tangents only make the vertex layouts differ
+          // no normal maps anywhere: tangents only make the vertex layouts differ (and force bakeRow's slow path)
           m.geometry.deleteAttribute('tangent');
-          m.material = shared(m.material as THREE.MeshStandardMaterial);
+          if (m.material && !Array.isArray(m.material)) m.material = shared(m.material as THREE.MeshStandardMaterial);
         }
       });
       ready.set(key, gltf);

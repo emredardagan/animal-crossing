@@ -1,7 +1,7 @@
 // Our own explainer before the system App Tracking Transparency dialog (shown once, after the first run).
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Animated, { ZoomIn } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { ShieldCheck } from './icons';
 import { Cta, CtaText } from './bits';
 import { C, s } from './theme';
@@ -9,7 +9,7 @@ import { C, s } from './theme';
 export function AttPrompt({ onDone }: { onDone: () => void }) {
   return (
     <View style={st.wrap}>
-      <Animated.View entering={ZoomIn.springify().damping(12)} style={s.panel}>
+      <Animated.View entering={FadeIn.duration(220)} style={s.panel}>
         <ShieldCheck size={44} weight="bold" color={C.accent} />
         <Text style={[s.h2, { fontSize: 28, marginTop: 8, textAlign: 'center' }]}>Keep Paw Crossing free</Text>
         <Text style={[s.dim, { textAlign: 'center', marginVertical: 14 }]}>

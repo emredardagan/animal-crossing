@@ -1,7 +1,7 @@
 // A full-screen card with a close button, used by Shop and Settings.
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
+import Animated, { Easing, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from './icons';
 import { RoundBtn } from './bits';
@@ -11,7 +11,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
   const insets = useSafeAreaInsets();
   return (
     <View style={st.dim}>
-      <Animated.View entering={SlideInDown.springify().damping(16)} exiting={SlideOutDown.duration(200)}
+      <Animated.View entering={SlideInDown.duration(260).easing(Easing.out(Easing.cubic))} exiting={SlideOutDown.duration(200)}
         style={[st.card, { marginTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>
         <View style={st.head}>
           <Text style={st.title} accessibilityRole="header">{title}</Text>

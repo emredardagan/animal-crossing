@@ -11,7 +11,7 @@ Paw Crossing for iPhone: the three.js web game rebuilt in **bare React Native (n
 
 ```
 App.tsx                 screens on top of the game canvas
-src/engine/             toybox.js port: WebGPU stage, asset loading (shared materials), static batching, particles, synth sound, TSL shaders
+src/engine/             toybox.js port: WebGPU stage, asset loading (shared materials), particles, synth sound, TSL shaders
 src/game/               config (data), Game.ts (the game, 1:1 with paw-crossing.html), ui.ts (game → React bridge)
 src/ui/                 HUD, title, game over, shop, settings, daily gift, ATT explainer…
 src/platform/           save (MMKV + iCloud ledger merge), purchases (RevenueCat), ads (AdMob/UMP/ATT), haptics, keys

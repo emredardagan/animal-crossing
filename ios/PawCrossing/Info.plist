@@ -41,6 +41,8 @@
 	</dict>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>This lets ads between runs be more relevant to you. Paw Crossing plays exactly the same either way.</string>
+	<key>RCTNewArchEnabled</key>
+	<true/>
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict>
