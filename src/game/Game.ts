@@ -5,6 +5,7 @@ import { AccessibilityInfo } from 'react-native';
 import { type Stage, PALETTE, QUALITY, type Quality } from '../engine/stage';
 import { preload, loaded, cloneLoaded, loadParticleTextures } from '../engine/assets';
 import { Bursts } from '../engine/bursts';
+import { mergeStatic } from '../engine/batch';
 import { Sfx } from '../engine/sfx';
 import { damp, rand, pick } from '../engine/math';
 import { uTime, makeWaterMaterial, makeBubbleMaterial, glowTexture } from '../engine/materials';
@@ -27,6 +28,7 @@ interface Row {
   i: number; type: string; group: THREE.Group; blocked: Set<number>; movers: Mover[]; mixers: THREE.AnimationMixer[];
   coin: Obj | null; power: { obj: Obj; model: Obj; ring: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>; kind: 'heart' | 'magnet' | 'gem' } | null;
   zone: number; farm?: boolean; dir: number; speed: number; span: number; boss?: boolean; announced?: boolean; lily?: boolean; train?: Train;
+  merged: THREE.Mesh[]; // static batches built for this row (their geometry is the row's to dispose)
 }
 
 export interface Entitlements { club: boolean; safari: boolean; legendary: boolean }
@@ -73,6 +75,9 @@ export class Game {
   padMat = new THREE.MeshStandardMaterial({ color: 0x5fbf5a, roughness: .8 });
   padMatDark = new THREE.MeshStandardMaterial({ color: 0x4fa86a, roughness: .8 });
   waterMat = makeWaterMaterial();
+  waterGeo = new THREE.PlaneGeometry(WORLD * 2, 1);
+  ringMats = new Map<number, THREE.MeshBasicMaterial>();
+  weedMats = new Map<THREE.Material, THREE.MeshStandardMaterial>();
   bubble = new THREE.Mesh(new THREE.SphereGeometry(0.62, 32, 20), makeBubbleMaterial());
   silhouette = new THREE.MeshStandardMaterial({ color: 0x2b2d42, roughness: 1 });
   gold = new THREE.MeshStandardMaterial({ color: 0xffc23d, metalness: 0.75, roughness: 0.3 });
@@ -285,7 +290,7 @@ export class Game {
     const g = new THREE.Group();
     g.position.z = -i;
     this.world.add(g);
-    const row: Row = { i, type, group: g, blocked: new Set(), movers: [], mixers: [], coin: null, power: null, zone: zoneOf(i), dir: 0, speed: 0, span: 0 };
+    const row: Row = { i, type, group: g, blocked: new Set(), movers: [], mixers: [], coin: null, power: null, zone: zoneOf(i), dir: 0, speed: 0, span: 0, merged: [] };
     const alt = i % 2 === 0;
     const zone = ZONES[zoneOf(i)];
     const gate = i > 0 && i % ZONE_LEN === 0;
@@ -333,7 +338,9 @@ export class Game {
         const look = ({ heart: ['heart', 0xff5d8a], magnet: ['star', 0x8a5cff], gem: ['jewel', 0x3cd6c8] } as const)[kind];
         const o = new THREE.Group();
         const model = this.fitted(P.plat(look[0]), 0.6); model.position.y = 0.45; o.add(model);
-        const ring = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: look[1], transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+        let ringMat = this.ringMats.get(look[1]);
+        if (!ringMat) this.ringMats.set(look[1], ringMat = new THREE.MeshBasicMaterial({ color: look[1], transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+        const ring = new THREE.Mesh(this.ringGeo, ringMat);
         ring.rotation.x = -Math.PI / 2; ring.position.y = 0.02; o.add(ring);
         o.position.x = pick(spots); g.add(o);
         row.power = { obj: o, model, ring, kind };
@@ -418,7 +425,13 @@ export class Game {
         const bush = this.fitted(P.nat(pick(['plant_bush', 'plant_bushDetailed'])), 0.75);
         bush.traverse(c => {
           const mesh = c as THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
-          if (mesh.isMesh) { mesh.material = mesh.material.clone(); mesh.material.color.multiplyScalar(0.75).lerp(new THREE.Color(0xc9a15a), 0.55); }
+          if (!mesh.isMesh) return;
+          let tinted = this.weedMats.get(mesh.material);
+          if (!tinted) {
+            tinted = mesh.material.clone(); tinted.color.multiplyScalar(0.75).lerp(new THREE.Color(0xc9a15a), 0.55);
+            this.weedMats.set(mesh.material, tinted);
+          }
+          mesh.material = tinted;
         });
         this.ground(bush); bush.position.y -= 0.35; const spin = new THREE.Group(); spin.position.y = 0.38; spin.add(bush); o.add(spin);
         o.position.set(-WORLD - 3 + offset + k * gap, 0, 0); g.add(o);
@@ -492,7 +505,7 @@ export class Game {
     }
 
     if (type === 'river') {
-      const water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD * 2, 1), this.waterMat);
+      const water = new THREE.Mesh(this.waterGeo, this.waterMat);
       water.rotation.x = -Math.PI / 2; water.position.y = -0.18; g.add(water);
       const bed = new THREE.Mesh(this.box, mats.bank); bed.scale.set(WORLD * 2, 0.4, 1); bed.position.y = -0.55; g.add(bed);
       const boats = this.waterKind === 'boats';
@@ -543,6 +556,15 @@ export class Game {
         row.dir = dir; row.speed = speed; row.span = span;
       }
     }
+
+    // bake everything that never moves into one mesh per material
+    const dynamic = new Set<Obj>(row.movers.map(m => m.obj));
+    for (const m of row.movers) for (const a of m.attach ?? []) dynamic.add(a.obj);
+    for (const q of (g.userData.bb ?? []) as Obj[]) dynamic.add(q);
+    if (row.coin) dynamic.add(row.coin);
+    if (row.power) dynamic.add(row.power.obj);
+    if (row.train) { dynamic.add(row.train.obj); row.train.lamps.forEach(l => dynamic.add(l)); }
+    row.merged = mergeStatic(g, dynamic);
 
     rows.set(i, row);
     this.maxRowBuilt = Math.max(this.maxRowBuilt, i);
@@ -595,7 +617,10 @@ export class Game {
   }
   disposeRow(row: Row) {
     this.world.remove(row.group);
-    for (const mx of row.mixers) mx.stopAllAction();
+    for (const mx of row.mixers) { mx.stopAllAction(); mx.uncacheRoot(mx.getRoot()); }
+    // only what this row created for itself: models, slabs and materials are shared
+    for (const m of row.merged) m.geometry.dispose();
+    for (const l of row.train?.lamps ?? []) l.material.dispose();
   }
 
   // ---------- player ----------

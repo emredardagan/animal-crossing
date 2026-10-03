@@ -49,6 +49,23 @@ const manager = new THREE.LoadingManager();
 manager.addHandler(/colormap\.png$/, new ColormapLoader(manager));
 const loader = new GLTFLoader(manager);
 
+// Every GLB brings its own copy of its kit's few materials (151 files, 25 distinct looks).
+// One instance per look means fewer GPU bind groups and lets static batching merge across models.
+const materials = new Map<string, THREE.Material>();
+function shared(mat: THREE.MeshStandardMaterial): THREE.Material {
+  if (!mat) return mat;
+  const t = mat.map;
+  if (t) t.anisotropy = 4;
+  const key = [
+    mat.type, mat.color?.getHex(), mat.roughness, mat.metalness, mat.emissive?.getHex(), mat.transparent, mat.opacity, mat.side, mat.alphaTest, mat.vertexColors,
+    t ? [t.source.uuid, t.offset.x, t.offset.y, t.repeat.x, t.repeat.y, t.rotation, t.channel].join(',') : '-',
+  ].join('|');
+  const hit = materials.get(key);
+  if (hit) { if (hit !== mat) mat.dispose(); return hit; }
+  materials.set(key, mat);
+  return mat;
+}
+
 const cache = new Map<string, Promise<GLTF>>();
 const ready = new Map<string, GLTF>();
 
@@ -70,8 +87,9 @@ export function load(key: string): Promise<GLTF> {
         const m = o as THREE.Mesh;
         if (m.isMesh) {
           m.castShadow = true; m.receiveShadow = true;
-          const mat = m.material as THREE.MeshStandardMaterial;
-          if (mat?.map) mat.map.anisotropy = 4;
+          // no normal maps anywhere: tangents only make the vertex layouts differ
+          m.geometry.deleteAttribute('tangent');
+          m.material = shared(m.material as THREE.MeshStandardMaterial);
         }
       });
       ready.set(key, gltf);
